@@ -1,59 +1,47 @@
-import nodemailer from 'nodemailer';
+import sgMail from '@sendgrid/mail';
 
-let transporter = null;
-let isTransporterReady = false;
+let isSendGridReady = false;
 
-export function getTransporter() {
-  if (transporter) return transporter;
+export function initializeSendGrid() {
+  if (isSendGridReady) return true;
   
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('⚠️  Email not configured (EMAIL_USER/EMAIL_PASS missing)');
-    return null;
-  }
-  
-  transporter = nodemailer.createTransport({ 
-    service: 'gmail', 
-    auth: { 
-      user: process.env.EMAIL_USER, 
-      pass: process.env.EMAIL_PASS 
-    } 
-  });
-  
-  // Verify transporter asynchronously (don't block on failure in production)
-  transporter.verify()
-    .then(() => {
-      isTransporterReady = true;
-      console.log('✓ Email transporter verified');
-    })
-    .catch(err => {
-      // In production, mark as ready even if verification fails (Gmail may timeout but still work)
-      isTransporterReady = true;
-      console.error('✗ Email verification failed (will attempt sends anyway):', err?.message || err);
-    });
-  
-  return transporter;
-}
-
-export function isReady() {
-  return isTransporterReady && Boolean(transporter);
-}
-
-export async function sendExpiryEmail(listing) {
-  const t = getTransporter();
-  if (!t || !isTransporterReady) {
-    console.warn('Email transporter not ready, skipping email');
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('⚠️  Email not configured (SENDGRID_API_KEY missing)');
     return false;
   }
   
   try {
-    const info = await t.sendMail({ 
-      from: process.env.EMAIL_USER, 
-      to: listing.email, 
-      subject: 'Your listing is expiring soon', 
-      text: `Hello,\n\nYour listing "${listing.name}" will expire soon.\n\nBest regards,\nHealthy Home Exchange` 
-    });
-    
-    console.log('✓ Email sent:', info?.messageId);
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    isSendGridReady = true;
+    console.log('✓ SendGrid configured');
+    return true;
+  } catch (err) {
+    console.error('✗ SendGrid initialization failed:', err?.message || err);
+    return false;
+  }
+}
+
+export function isReady() {
+  return isSendGridReady;
+}
+
+export async function sendExpiryEmail(listing) {
+  if (!initializeSendGrid()) {
+    console.warn('Email not configured, skipping email');
+    return false;
+  }
+  
+  const msg = {
+    to: listing.email,
+    from: process.env.SENDGRID_FROM_EMAIL || 'healthyhomeexchange@gmail.com',
+    subject: 'Your listing is expiring soon',
+    text: `Hello,\n\nYour listing "${listing.name}" will expire soon.\n\nBest regards,\nHealthy Home Exchange`,
+    html: `<p>Hello,</p><p>Your listing <strong>"${listing.name}"</strong> will expire soon.</p><p>Best regards,<br>Healthy Home Exchange</p>`
+  };
+  
+  try {
+    await sgMail.send(msg);
+    console.log('✓ Email sent to:', listing.email);
     return true;
   } catch (err) {
     console.error('✗ Email send error:', err?.message || err);
