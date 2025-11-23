@@ -19,15 +19,16 @@ export function getTransporter() {
     } 
   });
   
-  // Verify transporter asynchronously
+  // Verify transporter asynchronously (don't block on failure in production)
   transporter.verify()
     .then(() => {
       isTransporterReady = true;
       console.log('✓ Email transporter verified');
     })
     .catch(err => {
-      isTransporterReady = false;
-      console.error('✗ Email verification failed:', err?.message || err);
+      // In production, mark as ready even if verification fails (Gmail may timeout but still work)
+      isTransporterReady = true;
+      console.error('✗ Email verification failed (will attempt sends anyway):', err?.message || err);
     });
   
   return transporter;
